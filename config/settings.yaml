@@ -1,0 +1,145 @@
+# Belgian Startup News Aggregator Configuration
+
+# Data Sources
+sources:
+  - url: "https://www.tijd.be/rss/ondernemen_durfkapitaal.xml"
+    type: "rss"
+    name: "De Tijd - Durfkapitaal"
+    enabled: true
+
+  - url: "https://www.forbes.be/nl/ondernemers/"
+    type: "website"
+    name: "Forbes.be - Ondernemers"
+    enabled: true
+    config:
+      article_selector: "article.post, .article-card, .news-item"
+      title_selector: "h2 a, h3 a, .title a"
+      link_selector: "h2 a, h3 a, .title a"
+      date_selector: ".date, .post-date, time"
+      pagination_selector: ".pagination a.next, a.load-more"
+      max_pages: 3
+
+  - url: "https://www.forbes.be/nl/bedrijf/"
+    type: "website"
+    name: "Forbes.be - Bedrijf"
+    enabled: true
+    config:
+      article_selector: "article.post, .article-card, .news-item"
+      title_selector: "h2 a, h3 a, .title a"
+      link_selector: "h2 a, h3 a, .title a"
+      date_selector: ".date, .post-date, time"
+      pagination_selector: ".pagination a.next, a.load-more"
+      max_pages: 3
+
+  - url: "https://www.made-in.be/"
+    type: "website"
+    name: "Made in Belgium"
+    enabled: true
+    config:
+      article_selector: ".article, .news-item, .post"
+      title_selector: "h2 a, h3 a, .title a"
+      link_selector: "h2 a, h3 a, .title a"
+      date_selector: ".date, time, .meta-date"
+      pagination_selector: ".pagination a.next"
+      max_pages: 2
+
+  - url: "https://trends.knack.be/ondernemen/"
+    type: "website"
+    name: "Trends - Ondernemen"
+    enabled: true
+    config:
+      article_selector: "article, .article-teaser, .news-card"
+      title_selector: "h2 a, h3 a, .article-title a"
+      link_selector: "h2 a, h3 a, .article-title a"
+      date_selector: ".date, time, .article-date"
+      pagination_selector: ".pager__item--next a"
+      max_pages: 3
+
+  - url: "https://www.linkedin.com/company/de-tijd/"
+    type: "linkedin"
+    name: "De Tijd LinkedIn"
+    enabled: false  # Disabled - requires manual review
+    note: "LinkedIn scraping is not supported. Monitor manually or use official API."
+
+# Theme filter keywords (articles must match at least one)
+theme_keywords:
+  funding:
+    - "investering"
+    - "funding"
+    - "kapitaal"
+    - "Series A"
+    - "Series B"
+    - "Series C"
+    - "seed"
+    - "durfkapitaal"
+    - "venture capital"
+    - "financieringsronde"
+    - "opgehaald"
+    - "miljoen"
+  acquisition:
+    - "overname"
+    - "overgenomen"
+    - "acqui"
+    - "koopt"
+    - "gekocht"
+  merger:
+    - "fusie"
+    - "fuseren"
+    - "samengaan"
+    - "merger"
+  exit:
+    - "exit"
+    - "IPO"
+    - "beursgang"
+    - "verkoop"
+    - "verkocht"
+  startup:
+    - "startup"
+    - "start-up"
+    - "lancering"
+    - "lanceert"
+    - "nieuwe onderneming"
+    - "oprichter"
+  scaleup:
+    - "scale-up"
+    - "scaleup"
+    - "groei"
+    - "uitbreiding"
+    - "expansie"
+  fund:
+    - "fonds"
+    - "fund"
+    - "investeerder"
+    - "VC"
+    - "private equity"
+
+# Email recipients (placeholder - update with real addresses)
+email_recipients:
+  - "recipient1@example.com"
+  - "recipient2@example.com"
+
+# Processing settings
+processing:
+  # Minimum similarity score for semantic deduplication (0-1)
+  dedup_similarity_threshold: 0.85
+
+  # Maximum enrichment attempts per item
+  max_enrichment_attempts: 2
+
+  # Request delays (seconds)
+  min_request_delay: 2.0
+  max_request_delay: 5.0
+
+  # LLM settings
+  llm_model: "claude-3-5-haiku-20241022"
+  llm_max_tokens: 1024
+
+  # Batch size for LLM processing
+  llm_batch_size: 10
+
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/scraper.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
