@@ -12,7 +12,7 @@ from .scrapers.base import ScraperResult
 from .scrapers.rss_scraper import RssScraper
 from .scrapers.web_scraper import WebScraper
 from .processing.deduplication import Deduplicator
-from .processing.classifier import ClassifierWithFallback
+from .processing.classifier import create_classifier, BaseClassifier
 from .processing.enrichment import Enricher
 from .output.email_digest import EmailDigest
 
@@ -31,13 +31,18 @@ class NewsAggregator:
         )
 
         # Initialize classifier if API key available
-        self.classifier: Optional[ClassifierWithFallback] = None
-        if config.anthropic_api_key:
-            self.classifier = ClassifierWithFallback(
-                api_key=config.anthropic_api_key,
-                model=config.processing.llm_model,
+        self.classifier: Optional[BaseClassifier] = None
+        api_key = config.get_llm_api_key()
+        if api_key:
+            self.classifier = create_classifier(
+                provider=config.processing.llm_provider,
+                api_key=api_key,
+                model=config.processing.llm_model or None,  # Empty string -> None -> use default
                 max_tokens=config.processing.llm_max_tokens,
             )
+            logger.info(f"Using LLM provider: {config.processing.llm_provider}")
+        else:
+            logger.warning(f"No API key found for provider: {config.processing.llm_provider}")
 
         # Initialize enricher
         self.enricher: Optional[Enricher] = None

@@ -5,8 +5,10 @@ lxml>=5.0.0
 feedparser>=6.0.0
 playwright>=1.40.0
 
-# LLM
+# LLM providers (install the one you'll use, or all for flexibility)
+openai>=1.0.0
 anthropic>=0.40.0
+google-generativeai>=0.8.0
 
 # Data processing
 python-dateutil>=2.8.0

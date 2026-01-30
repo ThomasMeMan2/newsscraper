@@ -1,10 +1,9 @@
-"""LLM-based classification of news items."""
+"""LLM-based classification of news items with multi-provider support."""
 
 import json
 import logging
+from abc import ABC, abstractmethod
 from typing import Optional
-
-from anthropic import Anthropic
 
 from ..storage.models import NewsItem
 
@@ -37,7 +36,7 @@ REGION (kies één):
 - US: Amerikaans bedrijf of investeerder
 - Other: Rest van de wereld of onduidelijk
 
-Geef je antwoord in het volgende JSON-formaat:
+Geef je antwoord ALLEEN als JSON in het volgende formaat (geen extra tekst):
 {{
     "news_type": "Funding|Acquisition|Merger|Exit|Startup|Scale-up|Fund|Other",
     "news_type_confidence": "high|medium|low",
@@ -59,22 +58,28 @@ Belangrijke richtlijnen:
 """
 
 
-class Classifier:
-    """LLM-based news classifier using Claude."""
+# Default models per provider
+DEFAULT_MODELS = {
+    "openai": "gpt-4o-mini",
+    "anthropic": "claude-3-5-haiku-20241022",
+    "gemini": "gemini-1.5-flash",
+}
 
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "claude-3-5-haiku-20241022",
-        max_tokens: int = 1024,
-    ):
-        self.client = Anthropic(api_key=api_key)
+
+class BaseClassifier(ABC):
+    """Abstract base class for LLM classifiers."""
+
+    def __init__(self, model: str, max_tokens: int = 1024):
         self.model = model
         self.max_tokens = max_tokens
 
+    @abstractmethod
+    def _call_llm(self, prompt: str) -> str:
+        """Make API call to LLM provider. Returns response text."""
+        pass
+
     def _parse_response(self, response_text: str) -> dict:
         """Parse LLM response JSON."""
-        # Try to find JSON in the response
         try:
             # Look for JSON block
             if '```json' in response_text:
@@ -111,7 +116,6 @@ class Classifier:
 
     def classify(self, item: NewsItem) -> NewsItem:
         """Classify a single news item."""
-        # Build prompt
         content = item.raw_content or item.title
         if len(content) > 3000:
             content = content[:3000] + "..."
@@ -122,15 +126,7 @@ class Classifier:
         )
 
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-            )
-
-            response_text = response.content[0].text
+            response_text = self._call_llm(prompt)
             classification = self._parse_response(response_text)
 
             if not classification:
@@ -155,7 +151,6 @@ class Classifier:
 
         except Exception as e:
             logger.error(f"Classification failed for {item.url_hash}: {e}")
-            # Apply defaults
             defaults = self._get_default_classification()
             item.news_type = defaults["news_type"]
             item.news_type_confidence = defaults["news_type_confidence"]
@@ -177,17 +172,121 @@ class Classifier:
         logger.info(f"Classified {len(classified)} items")
         return classified
 
-
-class ClassifierWithFallback(Classifier):
-    """Classifier with re-classification support for enrichment."""
-
     def reclassify_with_context(self, item: NewsItem, additional_content: str) -> NewsItem:
         """Re-classify item with additional context from enrichment."""
-        # Combine original and new content
         combined_content = f"{item.raw_content}\n\nAanvullende informatie:\n{additional_content}"
-
-        # Create a temporary item with combined content
         item.raw_content = combined_content
-
-        # Re-run classification
         return self.classify(item)
+
+
+class OpenAIClassifier(BaseClassifier):
+    """Classifier using OpenAI API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        max_tokens: int = 1024,
+    ):
+        super().__init__(model, max_tokens)
+        from openai import OpenAI
+        self.client = OpenAI(api_key=api_key)
+
+    def _call_llm(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+        )
+        return response.choices[0].message.content
+
+
+class AnthropicClassifier(BaseClassifier):
+    """Classifier using Anthropic Claude API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-5-haiku-20241022",
+        max_tokens: int = 1024,
+    ):
+        super().__init__(model, max_tokens)
+        from anthropic import Anthropic
+        self.client = Anthropic(api_key=api_key)
+
+    def _call_llm(self, prompt: str) -> str:
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+        )
+        return response.content[0].text
+
+
+class GeminiClassifier(BaseClassifier):
+    """Classifier using Google Gemini API."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-1.5-flash",
+        max_tokens: int = 1024,
+    ):
+        super().__init__(model, max_tokens)
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        self.client = genai.GenerativeModel(model)
+        self.generation_config = genai.GenerationConfig(
+            max_output_tokens=max_tokens,
+            response_mime_type="application/json",
+        )
+
+    def _call_llm(self, prompt: str) -> str:
+        response = self.client.generate_content(
+            prompt,
+            generation_config=self.generation_config,
+        )
+        return response.text
+
+
+def create_classifier(
+    provider: str,
+    api_key: str,
+    model: Optional[str] = None,
+    max_tokens: int = 1024,
+) -> BaseClassifier:
+    """
+    Factory function to create the appropriate classifier.
+
+    Args:
+        provider: One of 'openai', 'anthropic', 'gemini'
+        api_key: API key for the provider
+        model: Model name (uses default if not specified)
+        max_tokens: Maximum tokens for response
+
+    Returns:
+        Configured classifier instance
+    """
+    provider = provider.lower()
+
+    if model is None:
+        model = DEFAULT_MODELS.get(provider)
+
+    if provider == "openai":
+        return OpenAIClassifier(api_key, model, max_tokens)
+    elif provider == "anthropic":
+        return AnthropicClassifier(api_key, model, max_tokens)
+    elif provider == "gemini":
+        return GeminiClassifier(api_key, model, max_tokens)
+    else:
+        raise ValueError(f"Unknown LLM provider: {provider}. Use 'openai', 'anthropic', or 'gemini'.")
+
+
+# Backwards compatibility alias
+Classifier = AnthropicClassifier
+ClassifierWithFallback = BaseClassifier  # All classifiers now support reclassify_with_context

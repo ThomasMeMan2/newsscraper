@@ -131,7 +131,13 @@ processing:
   max_request_delay: 5.0
 
   # LLM settings
-  llm_model: "claude-3-5-haiku-20241022"
+  # provider: openai, anthropic, or gemini
+  llm_provider: "openai"
+  # model: leave empty to use provider default, or specify:
+  #   openai: gpt-4o-mini, gpt-4o, gpt-4-turbo
+  #   anthropic: claude-3-5-haiku-20241022, claude-3-5-sonnet-20241022
+  #   gemini: gemini-1.5-flash, gemini-1.5-pro
+  llm_model: ""
   llm_max_tokens: 1024
 
   # Batch size for LLM processing

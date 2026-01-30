@@ -30,7 +30,9 @@ class ProcessingConfig:
     max_enrichment_attempts: int = 2
     min_request_delay: float = 2.0
     max_request_delay: float = 5.0
-    llm_model: str = "claude-3-5-haiku-20241022"
+    # LLM settings
+    llm_provider: str = "openai"  # openai, anthropic, gemini
+    llm_model: str = ""  # Empty = use provider default
     llm_max_tokens: int = 1024
     llm_batch_size: int = 10
 
@@ -54,7 +56,10 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     # Environment variables (loaded from .env)
+    # LLM API keys (only the one matching llm_provider needs to be set)
+    openai_api_key: str = ""
     anthropic_api_key: str = ""
+    gemini_api_key: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -73,6 +78,18 @@ class Config:
         for keyword_list in self.theme_keywords.values():
             keywords.extend(keyword_list)
         return keywords
+
+    def get_llm_api_key(self) -> str:
+        """Get the API key for the configured LLM provider."""
+        provider = self.processing.llm_provider.lower()
+        if provider == "openai":
+            return self.openai_api_key
+        elif provider == "anthropic":
+            return self.anthropic_api_key
+        elif provider == "gemini":
+            return self.gemini_api_key
+        else:
+            raise ValueError(f"Unknown LLM provider: {provider}")
 
 
 def load_config(
@@ -131,7 +148,8 @@ def load_config(
         max_enrichment_attempts=proc_data.get('max_enrichment_attempts', 2),
         min_request_delay=proc_data.get('min_request_delay', 2.0),
         max_request_delay=proc_data.get('max_request_delay', 5.0),
-        llm_model=proc_data.get('llm_model', 'claude-3-5-haiku-20241022'),
+        llm_provider=proc_data.get('llm_provider', 'openai'),
+        llm_model=proc_data.get('llm_model', ''),  # Empty = use provider default
         llm_max_tokens=proc_data.get('llm_max_tokens', 1024),
         llm_batch_size=proc_data.get('llm_batch_size', 10),
     )
@@ -152,8 +170,11 @@ def load_config(
         email_recipients=yaml_config.get('email_recipients', []),
         processing=processing,
         logging=logging_config,
-        # Environment variables
+        # Environment variables - LLM API keys
+        openai_api_key=os.getenv('OPENAI_API_KEY', ''),
         anthropic_api_key=os.getenv('ANTHROPIC_API_KEY', ''),
+        gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
+        # SMTP settings
         smtp_host=os.getenv('SMTP_HOST', 'smtp.gmail.com'),
         smtp_port=int(os.getenv('SMTP_PORT', '587')),
         smtp_username=os.getenv('SMTP_USERNAME', ''),

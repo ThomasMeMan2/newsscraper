@@ -6,7 +6,7 @@ An automated pipeline that aggregates Belgian startup and venture capital news f
 
 - **Multi-source scraping**: RSS feeds and websites
 - **Smart deduplication**: Exact URL matching + semantic similarity detection
-- **AI-powered classification**: Uses Claude to classify news into categories (Funding, Acquisition, Merger, Exit, Startup, Scale-up, Fund, Other)
+- **AI-powered classification**: Uses LLM (OpenAI, Anthropic, or Gemini) to classify news into categories (Funding, Acquisition, Merger, Exit, Startup, Scale-up, Fund, Other)
 - **Automatic enrichment**: Fetches full article content for low-confidence classifications
 - **Email digest**: Daily summary grouped by news type
 - **HubSpot-ready**: Schema includes sync tracking for future CRM integration
@@ -27,7 +27,7 @@ An automated pipeline that aggregates Belgian startup and venture capital news f
 ### Prerequisites
 
 - Python 3.11+
-- An Anthropic API key (for Claude classification)
+- API key for one of: **OpenAI** (default), **Anthropic**, or **Google Gemini**
 - SMTP credentials for email digest (optional)
 
 ### Setup
@@ -72,8 +72,10 @@ python run.py --init-db
 ### Environment Variables (config/.env)
 
 ```env
-# Required for classification
-ANTHROPIC_API_KEY=sk-ant-xxxxx
+# LLM API Keys (only one required - based on llm_provider in settings.yaml)
+OPENAI_API_KEY=sk-xxxxx          # Default provider
+ANTHROPIC_API_KEY=sk-ant-xxxxx   # Alternative
+GEMINI_API_KEY=xxxxx             # Alternative
 
 # Required for email digest
 SMTP_HOST=smtp.gmail.com
@@ -81,6 +83,21 @@ SMTP_PORT=587
 SMTP_USERNAME=your-email@gmail.com
 SMTP_PASSWORD=your-app-password
 EMAIL_FROM=your-email@gmail.com
+```
+
+### Switching LLM Providers
+
+In `config/settings.yaml`, change the `llm_provider` setting:
+
+```yaml
+processing:
+  # Options: openai, anthropic, gemini
+  llm_provider: "openai"      # Uses gpt-4o-mini by default
+  # llm_provider: "anthropic" # Uses claude-3-5-haiku by default
+  # llm_provider: "gemini"    # Uses gemini-1.5-flash by default
+
+  # Optional: Override the default model
+  llm_model: ""  # Leave empty for provider default
 ```
 
 ### Settings (config/settings.yaml)
