@@ -15,13 +15,14 @@ logger = logging.getLogger(__name__)
 class Database:
     """SQLite database manager for news items and source states."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2  # Bumped for duplicate_of field
 
     def __init__(self, db_path: str | Path):
         """Initialize database connection."""
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
+        self._run_migrations()
 
     @contextmanager
     def _get_connection(self):
@@ -110,6 +111,30 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_news_hubspot ON news_items(hubspot_synced)")
 
             logger.info(f"Database initialized at {self.db_path}")
+
+    def _run_migrations(self):
+        """Run database migrations for schema updates."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Check if duplicate_of column exists
+            cursor.execute("PRAGMA table_info(news_items)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if 'duplicate_of' not in columns:
+                logger.info("Running migration: adding duplicate_of column")
+                cursor.execute("""
+                    ALTER TABLE news_items ADD COLUMN duplicate_of TEXT
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_news_duplicate_of ON news_items(duplicate_of)
+                """)
+
+            if 'similarity_score' not in columns:
+                logger.info("Running migration: adding similarity_score column")
+                cursor.execute("""
+                    ALTER TABLE news_items ADD COLUMN similarity_score REAL
+                """)
 
     # === News Items Operations ===
 
@@ -230,16 +255,68 @@ class Database:
             """, (limit,))
             return [NewsItem.from_dict(dict(row)) for row in cursor.fetchall()]
 
-    def get_recent_items(self, days: int = 7) -> list[NewsItem]:
+    def get_recent_items(self, days: int = 7, include_duplicates: bool = False) -> list[NewsItem]:
         """Get items from the last N days."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if include_duplicates:
+                cursor.execute("""
+                    SELECT * FROM news_items
+                    WHERE processed_date >= date('now', ?)
+                    ORDER BY pub_date DESC
+                """, (f'-{days} days',))
+            else:
+                cursor.execute("""
+                    SELECT * FROM news_items
+                    WHERE processed_date >= date('now', ?)
+                    AND duplicate_of IS NULL
+                    ORDER BY pub_date DESC
+                """, (f'-{days} days',))
+            return [NewsItem.from_dict(dict(row)) for row in cursor.fetchall()]
+
+    def get_duplicates_of(self, primary_hash: str) -> list[NewsItem]:
+        """Get all items that are duplicates of the given primary item."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM news_items
-                WHERE processed_date >= date('now', ?)
-                ORDER BY pub_date DESC
-            """, (f'-{days} days',))
+                WHERE duplicate_of = ?
+                ORDER BY processed_date DESC
+            """, (primary_hash,))
             return [NewsItem.from_dict(dict(row)) for row in cursor.fetchall()]
+
+    def get_all_duplicates(self) -> list[NewsItem]:
+        """Get all duplicate items."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM news_items
+                WHERE duplicate_of IS NOT NULL
+                ORDER BY processed_date DESC
+            """)
+            return [NewsItem.from_dict(dict(row)) for row in cursor.fetchall()]
+
+    def unlink_duplicate(self, url_hash: str) -> bool:
+        """Remove the duplicate relationship for an item. Returns True if updated."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE news_items
+                SET duplicate_of = NULL, similarity_score = NULL
+                WHERE url_hash = ?
+            """, (url_hash,))
+            return cursor.rowcount > 0
+
+    def mark_as_duplicate(self, duplicate_hash: str, primary_hash: str, similarity: float):
+        """Mark an item as a duplicate of another."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE news_items
+                SET duplicate_of = ?, similarity_score = ?
+                WHERE url_hash = ?
+            """, (primary_hash, similarity, duplicate_hash))
+            logger.info(f"Marked {duplicate_hash} as duplicate of {primary_hash} ({similarity:.2%})")
 
     def get_items_by_date(self, target_date: date) -> list[NewsItem]:
         """Get all items processed on a specific date."""

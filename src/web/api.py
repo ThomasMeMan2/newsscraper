@@ -235,22 +235,25 @@ async def get_stats():
 async def get_news_items(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
-    news_type: Optional[str] = None,
-    region: Optional[str] = None,
+    news_type: Optional[str] = None,  # Comma-separated for multiselect
+    region: Optional[str] = None,  # Comma-separated for multiselect
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    include_duplicates: bool = Query(False),  # Show duplicates (default: hide)
 ):
     """Get news items with pagination and filtering."""
     # Get all recent items (last 90 days for performance)
-    items = db.get_recent_items(days=90)
+    items = db.get_recent_items(days=90, include_duplicates=include_duplicates)
 
-    # Apply filters
+    # Apply filters - support multiselect (comma-separated values)
     if news_type and news_type != "all":
-        items = [i for i in items if i.news_type == news_type]
+        selected_types = [t.strip() for t in news_type.split(",")]
+        items = [i for i in items if i.news_type in selected_types]
 
     if region and region != "all":
-        items = [i for i in items if i.region == region]
+        selected_regions = [r.strip() for r in region.split(",")]
+        items = [i for i in items if i.region in selected_regions]
 
     if search:
         search_lower = search.lower()
@@ -279,12 +282,16 @@ async def get_news_items(
     end = start + limit
     paginated_items = items[start:end]
 
+    # Get duplicate count for stats
+    duplicate_count = len(db.get_all_duplicates()) if not include_duplicates else 0
+
     return {
         "items": [i.to_dict() for i in paginated_items],
         "total": total,
         "page": page,
         "limit": limit,
         "pages": (total + limit - 1) // limit,
+        "duplicate_count": duplicate_count,
     }
 
 
@@ -303,6 +310,54 @@ async def delete_news_item(url_hash: str):
     # Note: This would require adding a delete method to the database
     # For now, return not implemented
     raise HTTPException(status_code=501, detail="Delete not implemented")
+
+
+@app.get("/api/news/{url_hash}/duplicates")
+async def get_item_duplicates(url_hash: str):
+    """Get all duplicates of a news item."""
+    duplicates = db.get_duplicates_of(url_hash)
+    return {
+        "primary_hash": url_hash,
+        "duplicates": [d.to_dict() for d in duplicates],
+        "count": len(duplicates),
+    }
+
+
+@app.post("/api/news/{url_hash}/unlink")
+async def unlink_duplicate(url_hash: str):
+    """Remove the duplicate relationship for an item, making it a regular item."""
+    item = db.get_news_item(url_hash)
+    if not item:
+        raise HTTPException(status_code=404, detail="News item not found")
+
+    if not item.duplicate_of:
+        raise HTTPException(status_code=400, detail="Item is not a duplicate")
+
+    success = db.unlink_duplicate(url_hash)
+    if success:
+        return {"status": "unlinked", "url_hash": url_hash}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to unlink duplicate")
+
+
+@app.get("/api/duplicates")
+async def get_all_duplicates():
+    """Get all duplicate items with their primary references."""
+    duplicates = db.get_all_duplicates()
+
+    # Group by primary and add primary item info
+    result = []
+    for dup in duplicates:
+        dup_dict = dup.to_dict()
+        # Get primary item title for display
+        primary = db.get_news_item(dup.duplicate_of)
+        dup_dict["primary_title"] = primary.title if primary else "Unknown"
+        result.append(dup_dict)
+
+    return {
+        "duplicates": result,
+        "count": len(result),
+    }
 
 
 # ============== API Routes: Sources ==============

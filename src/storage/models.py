@@ -40,9 +40,9 @@ class NewsItem:
     enrichment_attempts: int = 0
     hubspot_synced: bool = False
 
-    # Internal tracking
-    is_duplicate: bool = False
-    duplicate_of: Optional[str] = None  # url_hash of primary
+    # Duplicate tracking
+    duplicate_of: Optional[str] = None  # url_hash of primary item
+    similarity_score: Optional[float] = None  # similarity to primary (0-1)
 
     def __post_init__(self):
         """Generate url_hash if not provided."""
@@ -74,8 +74,13 @@ class NewsItem:
             self.related_people_confidence != "high"
         ])
 
+    @property
+    def is_duplicate(self) -> bool:
+        """Check if this item is marked as a duplicate."""
+        return self.duplicate_of is not None
+
     def to_dict(self) -> dict:
-        """Convert to dictionary for database storage."""
+        """Convert to dictionary for API/frontend."""
         return {
             "url_hash": self.url_hash,
             "source_url": self.source_url,
@@ -97,6 +102,9 @@ class NewsItem:
             "enrichment_source": self.enrichment_source,
             "enrichment_attempts": self.enrichment_attempts,
             "hubspot_synced": self.hubspot_synced,
+            "duplicate_of": self.duplicate_of,
+            "similarity_score": self.similarity_score,
+            "is_duplicate": self.is_duplicate,
         }
 
     @classmethod
@@ -137,6 +145,8 @@ class NewsItem:
             enrichment_source=data.get("enrichment_source", "none"),
             enrichment_attempts=data.get("enrichment_attempts", 0),
             hubspot_synced=bool(data.get("hubspot_synced", False)),
+            duplicate_of=data.get("duplicate_of"),
+            similarity_score=data.get("similarity_score"),
         )
 
 
