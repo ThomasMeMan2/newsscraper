@@ -93,6 +93,8 @@ class KeywordCategory(BaseModel):
 class SettingsUpdate(BaseModel):
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+    enrichment_provider: Optional[str] = None
+    enrichment_model: Optional[str] = None
     dedup_similarity_threshold: Optional[float] = None
     max_enrichment_attempts: Optional[int] = None
     min_request_delay: Optional[float] = None
@@ -237,6 +239,7 @@ async def get_news_items(
     limit: int = Query(50, ge=1, le=200),
     news_type: Optional[str] = None,  # Comma-separated for multiselect
     region: Optional[str] = None,  # Comma-separated for multiselect
+    source: Optional[str] = None,  # Comma-separated for multiselect
     search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -254,6 +257,10 @@ async def get_news_items(
     if region and region != "all":
         selected_regions = [r.strip() for r in region.split(",")]
         items = [i for i in items if i.region in selected_regions]
+
+    if source and source != "all":
+        selected_sources = [s.strip() for s in source.split(",")]
+        items = [i for i in items if i.source_name in selected_sources]
 
     if search:
         search_lower = search.lower()
@@ -358,6 +365,13 @@ async def get_all_duplicates():
         "duplicates": result,
         "count": len(result),
     }
+
+
+@app.get("/api/news/sources")
+async def get_unique_sources():
+    """Get list of unique source names from the database."""
+    sources = db.get_unique_sources()
+    return {"sources": sources}
 
 
 # ============== API Routes: Sources ==============
@@ -503,6 +517,8 @@ async def get_settings():
     return {
         "llm_provider": processing.get("llm_provider", "openai"),
         "llm_model": processing.get("llm_model", ""),
+        "enrichment_provider": processing.get("enrichment_provider", "openai"),
+        "enrichment_model": processing.get("enrichment_model", "gpt-4o-mini"),
         "dedup_similarity_threshold": processing.get("dedup_similarity_threshold", 0.85),
         "max_enrichment_attempts": processing.get("max_enrichment_attempts", 2),
         "min_request_delay": processing.get("min_request_delay", 2.0),
@@ -522,6 +538,10 @@ async def update_settings(settings: SettingsUpdate):
         processing["llm_provider"] = settings.llm_provider
     if settings.llm_model is not None:
         processing["llm_model"] = settings.llm_model
+    if settings.enrichment_provider is not None:
+        processing["enrichment_provider"] = settings.enrichment_provider
+    if settings.enrichment_model is not None:
+        processing["enrichment_model"] = settings.enrichment_model
     if settings.dedup_similarity_threshold is not None:
         processing["dedup_similarity_threshold"] = settings.dedup_similarity_threshold
     if settings.max_enrichment_attempts is not None:

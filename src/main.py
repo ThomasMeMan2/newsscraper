@@ -47,11 +47,15 @@ class NewsAggregator:
         # Initialize enricher
         self.enricher: Optional[Enricher] = None
         if self.classifier:
+            # Get API key for enrichment (uses OpenAI for web search)
+            enrichment_api_key = config.openai_api_key if config.processing.enrichment_provider == "openai" else None
             self.enricher = Enricher(
                 classifier=self.classifier,
                 max_attempts=config.processing.max_enrichment_attempts,
                 min_delay=config.processing.min_request_delay,
                 max_delay=config.processing.max_request_delay,
+                search_api_key=enrichment_api_key,
+                search_model=config.processing.enrichment_model,
             )
 
         # Initialize email digest

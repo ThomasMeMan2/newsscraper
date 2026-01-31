@@ -23,7 +23,7 @@
 
     <!-- Filters -->
     <div class="bg-white rounded-xl shadow-sm p-4 mb-6 border border-gray-200">
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
             <!-- Search -->
             <div class="md:col-span-2">
                 <input type="text" x-model="filters.search" @input.debounce.300ms="loadNews()"
@@ -76,6 +76,31 @@
                             <input type="checkbox" :value="region" x-model="filters.regions" @change="loadNews()"
                                    class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                             <span class="ml-2 text-sm text-gray-700" x-text="region"></span>
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Source - Multiselect Dropdown -->
+            <div class="relative" x-data="{ open: false }" @click.away="open = false">
+                <button @click="open = !open" type="button"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-left flex justify-between items-center">
+                    <span x-text="filters.sources.length === 0 ? 'All Sources' : filters.sources.length + ' selected'"></span>
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+                <div x-show="open" x-cloak class="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                    <label class="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
+                        <input type="checkbox" :checked="filters.sources.length === 0" @change="filters.sources = []; loadNews()"
+                               class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <span class="ml-2 text-sm text-gray-700">All Sources</span>
+                    </label>
+                    <template x-for="src in sourceOptions" :key="src">
+                        <label class="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" :value="src" x-model="filters.sources" @change="loadNews()"
+                                   class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                            <span class="ml-2 text-sm text-gray-700" x-text="src"></span>
                         </label>
                     </template>
                 </div>
@@ -321,17 +346,29 @@ function newsPage() {
         selectedItem: null,
         newsTypes: ['Funding', 'Acquisition', 'Merger', 'Exit', 'Startup', 'Scale-up', 'Fund', 'Other'],
         regionOptions: ['Belgium', 'Netherlands', 'UK', 'EU', 'US', 'Other'],
+        sourceOptions: [],  // Will be loaded from API
         filters: {
             search: '',
             news_types: [],  // Array for multiselect
             regions: [],     // Array for multiselect
+            sources: [],     // Array for multiselect
             date_from: '',
             date_to: '',
             include_duplicates: false
         },
 
         async init() {
+            await this.loadSources();
             await this.loadNews();
+        },
+
+        async loadSources() {
+            try {
+                const response = await api('/api/news/sources');
+                this.sourceOptions = response.sources || [];
+            } catch (error) {
+                console.error('Failed to load sources:', error);
+            }
         },
 
         async loadNews() {
@@ -345,6 +382,7 @@ function newsPage() {
                 if (this.filters.search) params.append('search', this.filters.search);
                 if (this.filters.news_types.length > 0) params.append('news_type', this.filters.news_types.join(','));
                 if (this.filters.regions.length > 0) params.append('region', this.filters.regions.join(','));
+                if (this.filters.sources.length > 0) params.append('source', this.filters.sources.join(','));
                 if (this.filters.date_from) params.append('date_from', this.filters.date_from);
                 if (this.filters.date_to) params.append('date_to', this.filters.date_to);
 

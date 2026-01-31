@@ -30,11 +30,14 @@ class ProcessingConfig:
     max_enrichment_attempts: int = 2
     min_request_delay: float = 2.0
     max_request_delay: float = 5.0
-    # LLM settings
+    # Classification LLM settings
     llm_provider: str = "openai"  # openai, anthropic, gemini
     llm_model: str = ""  # Empty = use provider default
     llm_max_tokens: int = 1024
     llm_batch_size: int = 10
+    # Enrichment LLM settings (uses web search)
+    enrichment_provider: str = "openai"  # Only openai supported for web search
+    enrichment_model: str = "gpt-4o-mini"
 
 
 @dataclass
@@ -152,6 +155,8 @@ def load_config(
         llm_model=proc_data.get('llm_model', ''),  # Empty = use provider default
         llm_max_tokens=proc_data.get('llm_max_tokens', 1024),
         llm_batch_size=proc_data.get('llm_batch_size', 10),
+        enrichment_provider=proc_data.get('enrichment_provider', 'openai'),
+        enrichment_model=proc_data.get('enrichment_model', 'gpt-4o-mini'),
     )
 
     # Parse logging config

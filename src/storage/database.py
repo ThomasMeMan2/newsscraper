@@ -428,6 +428,17 @@ class Database:
         state.consecutive_failures += 1
         self.update_source_state(state)
 
+    def get_unique_sources(self) -> list[str]:
+        """Get list of unique source names."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT source_name FROM news_items
+                WHERE source_name IS NOT NULL
+                ORDER BY source_name
+            """)
+            return [row['source_name'] for row in cursor.fetchall()]
+
     # === Statistics ===
 
     def get_stats(self) -> dict:

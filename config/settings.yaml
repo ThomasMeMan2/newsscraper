@@ -130,7 +130,7 @@ processing:
   min_request_delay: 2.0
   max_request_delay: 5.0
 
-  # LLM settings
+  # Classification LLM settings
   # provider: openai, anthropic, or gemini
   llm_provider: "openai"
   # model: leave empty to use provider default, or specify:
@@ -139,6 +139,12 @@ processing:
   #   gemini: gemini-1.5-flash, gemini-1.5-pro
   llm_model: ""
   llm_max_tokens: 1024
+
+  # Enrichment LLM settings (uses web search for finding related people, etc.)
+  # provider: only openai supported (for web search capability)
+  enrichment_provider: "openai"
+  # model: recommended gpt-4o-mini with web search
+  enrichment_model: "gpt-4o-mini"
 
   # Batch size for LLM processing
   llm_batch_size: 10

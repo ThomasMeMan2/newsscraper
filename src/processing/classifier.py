@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from ..storage.models import NewsItem
+from .amount_parser import normalize_funding_amount
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,9 @@ class BaseClassifier(ABC):
             item.company_name = classification.get("company_name")
             item.related_people = classification.get("related_people", [])
             item.related_people_confidence = classification.get("related_people_confidence", "low")
-            item.funding_amount = classification.get("funding_amount")
+            # Normalize funding amount to standard format (e.g., "€300M")
+            raw_amount = classification.get("funding_amount")
+            item.funding_amount = normalize_funding_amount(raw_amount) if raw_amount else None
             item.summary = classification.get("summary", "")
 
             logger.debug(
