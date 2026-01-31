@@ -57,6 +57,10 @@ app = FastAPI(
 # Mount static files and templates
 static_path = Path(__file__).parent / "static"
 templates_path = Path(__file__).parent / "templates"
+
+# Create static directory if it doesn't exist
+static_path.mkdir(parents=True, exist_ok=True)
+
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 templates = Jinja2Templates(directory=templates_path)
 
