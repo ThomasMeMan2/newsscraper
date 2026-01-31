@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Keywords - News Aggregator{% endblock %}
+
+{% block content %}
+<div x-data="keywordsPage()" x-init="init()">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Theme Keywords</h1>
+            <p class="text-gray-500 mt-1">Keywords used to filter relevant news articles</p>
+        </div>
+        <button @click="showAddCategory = true"
+                class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors">
+            + Add Category
+        </button>
+    </div>
+
+    <!-- Keywords Categories -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <template x-for="(words, category) in keywords" :key="category">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800 capitalize" x-text="category"></h3>
+                    <div class="flex space-x-1">
+                        <button @click="editCategory(category)"
+                                class="p-1.5 text-gray-400 hover:text-indigo-600 rounded hover:bg-gray-100">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                        </button>
+                        <button @click="deleteCategory(category)"
+                                class="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-gray-100">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="(word, idx) in words" :key="idx">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-gray-100 text-gray-700">
+                            <span x-text="word"></span>
+                        </span>
+                    </template>
+                </div>
+                <div class="mt-3 text-sm text-gray-400">
+                    <span x-text="words.length"></span> keywords
+                </div>
+            </div>
+        </template>
+
+        <div x-show="Object.keys(keywords).length === 0" class="col-span-full text-center py-12 text-gray-500 bg-white rounded-xl">
+            No keyword categories configured.
+        </div>
+    </div>
+
+    <!-- Add/Edit Category Modal -->
+    <div x-show="showAddCategory || editingCategory" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+         @click.self="closeModal()">
+        <div class="bg-white rounded-xl shadow-xl max-w-lg w-full">
+            <div class="p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4" x-text="editingCategory ? 'Edit Category: ' + editingCategory : 'Add Category'"></h2>
+
+                <form @submit.prevent="saveCategory()">
+                    <div class="space-y-4">
+                        <!-- Category Name -->
+                        <div x-show="!editingCategory">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Category Name</label>
+                            <input type="text" x-model="form.category" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                   placeholder="e.g., funding, acquisition">
+                        </div>
+
+                        <!-- Keywords -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Keywords (one per line)</label>
+                            <textarea x-model="form.keywordsText" rows="10"
+                                      class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                                      placeholder="investering&#10;funding&#10;kapitaal&#10;Series A"></textarea>
+                            <p class="text-xs text-gray-500 mt-1">Enter each keyword on a new line</p>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-3 mt-6">
+                        <button type="button" @click="closeModal()"
+                                class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                            Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function keywordsPage() {
+    return {
+        keywords: {},
+        showAddCategory: false,
+        editingCategory: null,
+        form: {
+            category: '',
+            keywordsText: ''
+        },
+
+        async init() {
+            await this.loadKeywords();
+        },
+
+        async loadKeywords() {
+            try {
+                this.keywords = await api('/api/keywords');
+            } catch (error) {
+                showToast('Failed to load keywords', 'error');
+            }
+        },
+
+        editCategory(category) {
+            this.editingCategory = category;
+            this.form.category = category;
+            this.form.keywordsText = this.keywords[category].join('\n');
+        },
+
+        closeModal() {
+            this.showAddCategory = false;
+            this.editingCategory = null;
+            this.form = { category: '', keywordsText: '' };
+        },
+
+        async saveCategory() {
+            try {
+                const category = this.editingCategory || this.form.category.toLowerCase().trim();
+                const keywords = this.form.keywordsText
+                    .split('\n')
+                    .map(k => k.trim())
+                    .filter(k => k.length > 0);
+
+                if (!category) {
+                    showToast('Category name is required', 'error');
+                    return;
+                }
+
+                await api(`/api/keywords/${encodeURIComponent(category)}`, {
+                    method: 'POST',
+                    body: JSON.stringify({ category, keywords })
+                });
+
+                showToast('Keywords saved', 'success');
+                this.closeModal();
+                await this.loadKeywords();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        },
+
+        async deleteCategory(category) {
+            if (!confirm(`Delete category "${category}" and all its keywords?`)) return;
+
+            try {
+                await api(`/api/keywords/${encodeURIComponent(category)}`, { method: 'DELETE' });
+                showToast('Category deleted', 'success');
+                await this.loadKeywords();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -9,6 +9,7 @@ An automated pipeline that aggregates Belgian startup and venture capital news f
 - **AI-powered classification**: Uses LLM (OpenAI, Anthropic, or Gemini) to classify news into categories (Funding, Acquisition, Merger, Exit, Startup, Scale-up, Fund, Other)
 - **Automatic enrichment**: Fetches full article content for low-confidence classifications
 - **Email digest**: Daily summary grouped by news type
+- **Web interface**: Full-featured dashboard to manage sources, keywords, settings, and view news
 - **HubSpot-ready**: Schema includes sync tracking for future CRM integration
 
 ## Data Sources
@@ -144,6 +145,27 @@ Add to crontab for daily execution at 8 AM:
 ```bash
 0 8 * * * cd /path/to/newsscraper && /path/to/venv/bin/python run.py >> logs/cron.log 2>&1
 ```
+
+### Web Interface
+
+Start the web dashboard to manage everything through a browser:
+
+```bash
+python web.py
+# or with custom port
+python web.py --port 3000
+# or with auto-reload for development
+python web.py --reload
+```
+
+Then open http://localhost:8000 in your browser.
+
+**Features:**
+- **Dashboard**: Overview of stats, run pipeline manually, view recent news
+- **News**: Browse all news items with filtering by type, region, date, search
+- **Sources**: Add, edit, enable/disable, or delete news sources
+- **Keywords**: Manage theme keyword categories for filtering
+- **Settings**: Configure LLM provider, API keys, email settings, recipients
 
 ## Pipeline Steps
 

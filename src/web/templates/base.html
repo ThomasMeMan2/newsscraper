@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}News Aggregator{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-indigo-600 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="text-xl font-bold">Belgian Startup News</a>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <a href="/" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500 {% if request.url.path == '/' %}bg-indigo-700{% endif %}">
+                        Dashboard
+                    </a>
+                    <a href="/news" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500 {% if request.url.path == '/news' %}bg-indigo-700{% endif %}">
+                        News
+                    </a>
+                    <a href="/sources" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500 {% if request.url.path == '/sources' %}bg-indigo-700{% endif %}">
+                        Sources
+                    </a>
+                    <a href="/keywords" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500 {% if request.url.path == '/keywords' %}bg-indigo-700{% endif %}">
+                        Keywords
+                    </a>
+                    <a href="/settings" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-500 {% if request.url.path == '/settings' %}bg-indigo-700{% endif %}">
+                        Settings
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Toast Notifications -->
+    <div x-data="{ toasts: [] }"
+         x-on:show-toast.window="toasts.push({message: $event.detail.message, type: $event.detail.type || 'info', id: Date.now()}); setTimeout(() => toasts.shift(), 3000)"
+         class="fixed bottom-4 right-4 z-50 space-y-2">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div x-show="true"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 transform translate-x-full"
+                 x-transition:enter-end="opacity-100 transform translate-x-0"
+                 :class="{
+                     'bg-green-500': toast.type === 'success',
+                     'bg-red-500': toast.type === 'error',
+                     'bg-blue-500': toast.type === 'info',
+                     'bg-yellow-500': toast.type === 'warning'
+                 }"
+                 class="text-white px-6 py-3 rounded-lg shadow-lg">
+                <span x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <script>
+        // Helper function to show toast
+        function showToast(message, type = 'info') {
+            window.dispatchEvent(new CustomEvent('show-toast', { detail: { message, type } }));
+        }
+
+        // API helper
+        async function api(endpoint, options = {}) {
+            const response = await fetch(endpoint, {
+                headers: { 'Content-Type': 'application/json', ...options.headers },
+                ...options
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+                throw new Error(error.detail || 'Request failed');
+            }
+            return response.json();
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

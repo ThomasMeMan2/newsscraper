@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - News Aggregator{% endblock %}
+
+{% block content %}
+<div x-data="settingsPage()" x-init="init()">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Settings</h1>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- LLM Settings -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">LLM Configuration</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                    <select x-model="settings.llm_provider"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="openai">OpenAI (GPT-4o-mini)</option>
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="gemini">Google (Gemini)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Model Override (optional)</label>
+                    <input type="text" x-model="settings.llm_model"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="Leave empty for provider default">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Examples: gpt-4o, claude-3-5-sonnet-20241022, gemini-1.5-pro
+                    </p>
+                </div>
+
+                <button @click="saveSettings()"
+                        class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    Save LLM Settings
+                </button>
+            </div>
+        </div>
+
+        <!-- API Keys -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">API Keys</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        OpenAI API Key
+                        <span x-show="keys.has_openai" class="text-green-600 text-xs ml-2">&#10003; Set</span>
+                    </label>
+                    <input type="password" x-model="keys.openai_api_key"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="sk-...">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Anthropic API Key
+                        <span x-show="keys.has_anthropic" class="text-green-600 text-xs ml-2">&#10003; Set</span>
+                    </label>
+                    <input type="password" x-model="keys.anthropic_api_key"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="sk-ant-...">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Gemini API Key
+                        <span x-show="keys.has_gemini" class="text-green-600 text-xs ml-2">&#10003; Set</span>
+                    </label>
+                    <input type="password" x-model="keys.gemini_api_key"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="AI...">
+                </div>
+
+                <button @click="saveApiKeys()"
+                        class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    Save API Keys
+                </button>
+            </div>
+        </div>
+
+        <!-- Processing Settings -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Processing Settings</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Deduplication Threshold
+                        <span class="text-gray-400 font-normal" x-text="'(' + (settings.dedup_similarity_threshold * 100).toFixed(0) + '%)'"></span>
+                    </label>
+                    <input type="range" x-model="settings.dedup_similarity_threshold"
+                           min="0.5" max="1" step="0.05"
+                           class="w-full">
+                    <p class="text-xs text-gray-500">Higher = stricter matching (fewer false duplicates)</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Enrichment Attempts</label>
+                    <input type="number" x-model.number="settings.max_enrichment_attempts"
+                           min="0" max="5"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Min Delay (sec)</label>
+                        <input type="number" x-model.number="settings.min_request_delay"
+                               min="0" max="30" step="0.5"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Max Delay (sec)</label>
+                        <input type="number" x-model.number="settings.max_request_delay"
+                               min="0" max="30" step="0.5"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <button @click="saveSettings()"
+                        class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    Save Processing Settings
+                </button>
+            </div>
+        </div>
+
+        <!-- Email Settings -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Email Configuration</h2>
+
+            <div class="space-y-4">
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+                        <input type="text" x-model="keys.smtp_host"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                               placeholder="smtp.gmail.com">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                        <input type="number" x-model.number="keys.smtp_port"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                               placeholder="587">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
+                    <input type="text" x-model="keys.smtp_username"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="your-email@gmail.com">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
+                    <input type="password" x-model="keys.smtp_password"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="App password">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">From Address</label>
+                    <input type="email" x-model="keys.email_from"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="news@example.com">
+                </div>
+
+                <button @click="saveEmailSettings()"
+                        class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    Save Email Settings
+                </button>
+            </div>
+        </div>
+
+        <!-- Email Recipients -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 lg:col-span-2">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">Email Recipients</h2>
+
+            <div class="space-y-4">
+                <div class="flex flex-wrap gap-2">
+                    <template x-for="(email, idx) in recipients" :key="idx">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-indigo-100 text-indigo-800">
+                            <span x-text="email"></span>
+                            <button @click="removeRecipient(idx)" class="ml-2 text-indigo-600 hover:text-indigo-800">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </span>
+                    </template>
+                </div>
+
+                <div class="flex space-x-2">
+                    <input type="email" x-model="newRecipient" @keyup.enter="addRecipient()"
+                           class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="Add email address">
+                    <button @click="addRecipient()"
+                            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                        Add
+                    </button>
+                </div>
+
+                <button @click="saveRecipients()"
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                    Save Recipients
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function settingsPage() {
+    return {
+        settings: {
+            llm_provider: 'openai',
+            llm_model: '',
+            dedup_similarity_threshold: 0.85,
+            max_enrichment_attempts: 2,
+            min_request_delay: 2.0,
+            max_request_delay: 5.0
+        },
+        keys: {
+            openai_api_key: '',
+            anthropic_api_key: '',
+            gemini_api_key: '',
+            smtp_host: '',
+            smtp_port: 587,
+            smtp_username: '',
+            smtp_password: '',
+            email_from: '',
+            has_openai: false,
+            has_anthropic: false,
+            has_gemini: false
+        },
+        recipients: [],
+        newRecipient: '',
+
+        async init() {
+            await Promise.all([
+                this.loadSettings(),
+                this.loadKeys(),
+                this.loadRecipients()
+            ]);
+        },
+
+        async loadSettings() {
+            try {
+                this.settings = await api('/api/settings');
+            } catch (error) {
+                showToast('Failed to load settings', 'error');
+            }
+        },
+
+        async loadKeys() {
+            try {
+                this.keys = await api('/api/keys');
+            } catch (error) {
+                showToast('Failed to load API keys', 'error');
+            }
+        },
+
+        async loadRecipients() {
+            try {
+                const data = await api('/api/recipients');
+                this.recipients = data.recipients || [];
+            } catch (error) {
+                showToast('Failed to load recipients', 'error');
+            }
+        },
+
+        async saveSettings() {
+            try {
+                await api('/api/settings', {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        llm_provider: this.settings.llm_provider,
+                        llm_model: this.settings.llm_model,
+                        dedup_similarity_threshold: this.settings.dedup_similarity_threshold,
+                        max_enrichment_attempts: this.settings.max_enrichment_attempts,
+                        min_request_delay: this.settings.min_request_delay,
+                        max_request_delay: this.settings.max_request_delay
+                    })
+                });
+                showToast('Settings saved', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        },
+
+        async saveApiKeys() {
+            try {
+                const payload = {};
+                if (this.keys.openai_api_key && !this.keys.openai_api_key.includes('...')) {
+                    payload.openai_api_key = this.keys.openai_api_key;
+                }
+                if (this.keys.anthropic_api_key && !this.keys.anthropic_api_key.includes('...')) {
+                    payload.anthropic_api_key = this.keys.anthropic_api_key;
+                }
+                if (this.keys.gemini_api_key && !this.keys.gemini_api_key.includes('...')) {
+                    payload.gemini_api_key = this.keys.gemini_api_key;
+                }
+
+                await api('/api/keys', {
+                    method: 'PUT',
+                    body: JSON.stringify(payload)
+                });
+                showToast('API keys saved', 'success');
+                await this.loadKeys();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        },
+
+        async saveEmailSettings() {
+            try {
+                await api('/api/keys', {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        smtp_host: this.keys.smtp_host,
+                        smtp_port: this.keys.smtp_port,
+                        smtp_username: this.keys.smtp_username,
+                        smtp_password: this.keys.smtp_password && !this.keys.smtp_password.includes('...') ? this.keys.smtp_password : undefined,
+                        email_from: this.keys.email_from
+                    })
+                });
+                showToast('Email settings saved', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        },
+
+        addRecipient() {
+            if (this.newRecipient && this.newRecipient.includes('@')) {
+                if (!this.recipients.includes(this.newRecipient)) {
+                    this.recipients.push(this.newRecipient);
+                }
+                this.newRecipient = '';
+            }
+        },
+
+        removeRecipient(idx) {
+            this.recipients.splice(idx, 1);
+        },
+
+        async saveRecipients() {
+            try {
+                await api('/api/recipients', {
+                    method: 'PUT',
+                    body: JSON.stringify({ recipients: this.recipients })
+                });
+                showToast('Recipients saved', 'success');
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

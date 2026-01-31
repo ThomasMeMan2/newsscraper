@@ -10,6 +10,11 @@ openai>=1.0.0
 anthropic>=0.40.0
 google-generativeai>=0.8.0
 
+# Web server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+jinja2>=3.1.0
+
 # Data processing
 python-dateutil>=2.8.0
 pyyaml>=6.0.0
