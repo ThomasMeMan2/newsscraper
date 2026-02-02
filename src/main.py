@@ -13,7 +13,7 @@ from .scrapers.rss_scraper import RssScraper
 from .scrapers.web_scraper import WebScraper
 from .processing.deduplication import Deduplicator
 from .processing.classifier import create_classifier, BaseClassifier
-from .processing.enrichment import Enricher
+from .processing.enricher import Enricher
 from .output.email_digest import EmailDigest
 
 logger = logging.getLogger(__name__)
