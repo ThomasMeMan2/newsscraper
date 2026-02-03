@@ -364,8 +364,9 @@ function newsPage() {
 
         async loadSources() {
             try {
-                const response = await api('/api/news/sources');
-                this.sourceOptions = response.sources || [];
+                // Load configured sources from settings
+                const sources = await api('/api/sources');
+                this.sourceOptions = sources.map(s => s.name).filter(n => n);
             } catch (error) {
                 console.error('Failed to load sources:', error);
             }
