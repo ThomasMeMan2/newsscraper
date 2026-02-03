@@ -1,6 +1,7 @@
 """SQLite database operations for the news aggregator."""
 
 import sqlite3
+import json
 import logging
 from datetime import date, datetime
 from pathlib import Path
@@ -99,6 +100,69 @@ class Database:
                     version INTEGER PRIMARY KEY
                 )
             """)
+
+            # Pipeline runs table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pipeline_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    started_at TIMESTAMP NOT NULL,
+                    completed_at TIMESTAMP,
+                    status TEXT DEFAULT 'running',
+                    total_sources INTEGER DEFAULT 0,
+                    total_items_found INTEGER DEFAULT 0,
+                    total_items_scraped INTEGER DEFAULT 0,
+                    total_items_rejected INTEGER DEFAULT 0,
+                    total_duplicates INTEGER DEFAULT 0,
+                    total_classified INTEGER DEFAULT 0,
+                    total_enriched INTEGER DEFAULT 0,
+                    total_saved_new INTEGER DEFAULT 0,
+                    total_saved_updated INTEGER DEFAULT 0,
+                    email_sent BOOLEAN DEFAULT FALSE,
+                    error_message TEXT,
+                    settings_snapshot TEXT
+                )
+            """)
+
+            # Per-source statistics for each run
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS run_source_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    source_name TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    source_type TEXT,
+                    items_found INTEGER DEFAULT 0,
+                    items_scraped INTEGER DEFAULT 0,
+                    items_rejected INTEGER DEFAULT 0,
+                    items_duplicate INTEGER DEFAULT 0,
+                    rejection_reasons TEXT,
+                    error_message TEXT,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
+                )
+            """)
+
+            # Enrichment log for each run
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS run_enrichment_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    url_hash TEXT NOT NULL,
+                    title TEXT,
+                    phase TEXT,
+                    fields_before TEXT,
+                    fields_after TEXT,
+                    success BOOLEAN DEFAULT TRUE,
+                    error_message TEXT,
+                    FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
+                )
+            """)
+
+            # Create indexes for run queries
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_runs_started ON pipeline_runs(started_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_run_sources_run ON run_source_stats(run_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_run_enrichment_run ON run_enrichment_log(run_id)")
 
             # Insert schema version if not exists
             cursor.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
@@ -477,3 +541,150 @@ class Database:
             stats['pending_sync'] = cursor.fetchone()[0]
 
             return stats
+
+    # === Run Tracking Operations ===
+
+    def create_run(self, settings_snapshot: Optional[dict] = None) -> int:
+        """Create a new pipeline run record. Returns the run ID."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO pipeline_runs (started_at, status, settings_snapshot)
+                VALUES (?, 'running', ?)
+            """, (datetime.now().isoformat(), json.dumps(settings_snapshot) if settings_snapshot else None))
+            return cursor.lastrowid
+
+    def update_run(self, run_id: int, **kwargs):
+        """Update run statistics."""
+        if not kwargs:
+            return
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            set_clauses = []
+            values = []
+            for key, value in kwargs.items():
+                set_clauses.append(f"{key} = ?")
+                values.append(value)
+            values.append(run_id)
+
+            cursor.execute(f"""
+                UPDATE pipeline_runs
+                SET {', '.join(set_clauses)}
+                WHERE id = ?
+            """, values)
+
+    def complete_run(self, run_id: int, status: str = 'completed', error_message: str = None):
+        """Mark a run as completed."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE pipeline_runs
+                SET completed_at = ?, status = ?, error_message = ?
+                WHERE id = ?
+            """, (datetime.now().isoformat(), status, error_message, run_id))
+
+    def add_source_stats(self, run_id: int, source_name: str, source_url: str, source_type: str,
+                         items_found: int = 0, items_scraped: int = 0, items_rejected: int = 0,
+                         items_duplicate: int = 0, rejection_reasons: dict = None,
+                         error_message: str = None, started_at: datetime = None, completed_at: datetime = None):
+        """Add source statistics for a run."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO run_source_stats (
+                    run_id, source_name, source_url, source_type,
+                    items_found, items_scraped, items_rejected, items_duplicate,
+                    rejection_reasons, error_message, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                run_id, source_name, source_url, source_type,
+                items_found, items_scraped, items_rejected, items_duplicate,
+                json.dumps(rejection_reasons) if rejection_reasons else None,
+                error_message,
+                started_at.isoformat() if started_at else None,
+                completed_at.isoformat() if completed_at else None,
+            ))
+
+    def add_enrichment_log(self, run_id: int, url_hash: str, title: str, phase: str,
+                           fields_before: dict, fields_after: dict,
+                           success: bool = True, error_message: str = None):
+        """Add enrichment log entry for a run."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO run_enrichment_log (
+                    run_id, url_hash, title, phase, fields_before, fields_after, success, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                run_id, url_hash, title, phase,
+                json.dumps(fields_before), json.dumps(fields_after),
+                success, error_message,
+            ))
+
+    def get_runs(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        """Get recent pipeline runs."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM pipeline_runs
+                ORDER BY started_at DESC
+                LIMIT ? OFFSET ?
+            """, (limit, offset))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_run(self, run_id: int) -> Optional[dict]:
+        """Get a single run by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM pipeline_runs WHERE id = ?", (run_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_run_source_stats(self, run_id: int) -> list[dict]:
+        """Get source statistics for a run."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM run_source_stats
+                WHERE run_id = ?
+                ORDER BY source_name
+            """, (run_id,))
+            results = []
+            for row in cursor.fetchall():
+                d = dict(row)
+                if d.get('rejection_reasons'):
+                    d['rejection_reasons'] = json.loads(d['rejection_reasons'])
+                results.append(d)
+            return results
+
+    def get_run_enrichment_log(self, run_id: int) -> list[dict]:
+        """Get enrichment log for a run."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM run_enrichment_log
+                WHERE run_id = ?
+                ORDER BY id
+            """, (run_id,))
+            results = []
+            for row in cursor.fetchall():
+                d = dict(row)
+                if d.get('fields_before'):
+                    d['fields_before'] = json.loads(d['fields_before'])
+                if d.get('fields_after'):
+                    d['fields_after'] = json.loads(d['fields_after'])
+                results.append(d)
+            return results
+
+    def get_last_run(self) -> Optional[dict]:
+        """Get the most recent run."""
+        runs = self.get_runs(limit=1)
+        return runs[0] if runs else None
+
+    def get_runs_count(self) -> int:
+        """Get total number of runs."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM pipeline_runs")
+            return cursor.fetchone()[0]

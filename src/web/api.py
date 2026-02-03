@@ -218,6 +218,12 @@ async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
 
 
+@app.get("/runs", response_class=HTMLResponse)
+async def runs_page(request: Request):
+    """Run history page."""
+    return templates.TemplateResponse("runs.html", {"request": request})
+
+
 # ============== API Routes: Stats ==============
 
 @app.get("/api/stats")
@@ -637,6 +643,77 @@ async def update_recipients(data: EmailRecipients):
     save_yaml_config(yaml_config)
     reload_config()
     return {"status": "updated", "recipients": data.recipients}
+
+
+# ============== API Routes: Run History ==============
+
+@app.get("/api/runs")
+async def get_runs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Get pipeline run history."""
+    offset = (page - 1) * limit
+    runs = db.get_runs(limit=limit, offset=offset)
+    total = db.get_runs_count()
+
+    return {
+        "runs": runs,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": (total + limit - 1) // limit,
+    }
+
+
+@app.get("/api/runs/last")
+async def get_last_run():
+    """Get the most recent run."""
+    run = db.get_last_run()
+    if not run:
+        return {"run": None}
+
+    # Include source stats
+    run["source_stats"] = db.get_run_source_stats(run["id"])
+    return {"run": run}
+
+
+@app.get("/api/runs/{run_id}")
+async def get_run(run_id: int):
+    """Get a specific run with full details."""
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run["source_stats"] = db.get_run_source_stats(run_id)
+    run["enrichment_log"] = db.get_run_enrichment_log(run_id)
+    return run
+
+
+@app.get("/api/runs/{run_id}/sources")
+async def get_run_sources(run_id: int):
+    """Get source statistics for a run."""
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    return {
+        "run_id": run_id,
+        "sources": db.get_run_source_stats(run_id),
+    }
+
+
+@app.get("/api/runs/{run_id}/enrichments")
+async def get_run_enrichments(run_id: int):
+    """Get enrichment log for a run."""
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    return {
+        "run_id": run_id,
+        "enrichments": db.get_run_enrichment_log(run_id),
+    }
 
 
 # ============== API Routes: Pipeline Control ==============

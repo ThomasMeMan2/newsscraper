@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block title %}Run History - News Aggregator{% endblock %}
+
+{% block content %}
+<div x-data="runsPage()" x-init="init()">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Pipeline Run History</h1>
+        <button @click="loadRuns()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+            Refresh
+        </button>
+    </div>
+
+    <!-- Run List -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Run #</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sources</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Found</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scraped</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rejected</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duplicates</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enriched</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Saved</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <template x-for="run in runs" :key="run.id">
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" x-text="'#' + run.id"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500" x-text="formatDate(run.started_at)"></td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="px-2 py-1 text-xs font-medium rounded"
+                                      :class="{
+                                          'bg-green-100 text-green-800': run.status === 'completed',
+                                          'bg-red-100 text-red-800': run.status === 'failed',
+                                          'bg-yellow-100 text-yellow-800': run.status === 'running'
+                                      }"
+                                      x-text="run.status"></span>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700" x-text="run.total_sources"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700" x-text="run.total_items_found"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-green-600 font-medium" x-text="run.total_items_scraped"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-orange-600" x-text="run.total_items_rejected"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500" x-text="run.total_duplicates"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm text-blue-600" x-text="run.total_enriched"></td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                <span class="text-green-600 font-medium" x-text="run.total_saved_new"></span>
+                                <span class="text-gray-400">new</span>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <button @click="showRunDetail(run.id)"
+                                        class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+                                    Details
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="runs.length === 0 && !loading" class="text-center py-12 text-gray-500">
+            No pipeline runs found. Run the pipeline from the Dashboard.
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="text-center py-12">
+            <svg class="animate-spin h-8 w-8 mx-auto text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <!-- Pagination -->
+        <div x-show="pages > 1" class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div class="text-sm text-gray-500">
+                Page <span x-text="page"></span> of <span x-text="pages"></span>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="prevPage()" :disabled="page <= 1"
+                        :class="page <= 1 ? 'bg-gray-200 cursor-not-allowed' : 'bg-white hover:bg-gray-100'"
+                        class="px-4 py-2 text-sm border border-gray-300 rounded-lg">
+                    Previous
+                </button>
+                <button @click="nextPage()" :disabled="page >= pages"
+                        :class="page >= pages ? 'bg-gray-200 cursor-not-allowed' : 'bg-white hover:bg-gray-100'"
+                        class="px-4 py-2 text-sm border border-gray-300 rounded-lg">
+                    Next
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run Detail Modal -->
+    <div x-show="selectedRun" x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+         @click.self="selectedRun = null">
+        <div class="bg-white rounded-xl shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <!-- Header -->
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-800">
+                            Run #<span x-text="selectedRun?.id"></span>
+                        </h2>
+                        <p class="text-sm text-gray-500" x-text="formatDate(selectedRun?.started_at)"></p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="px-3 py-1 text-sm font-medium rounded"
+                              :class="{
+                                  'bg-green-100 text-green-800': selectedRun?.status === 'completed',
+                                  'bg-red-100 text-red-800': selectedRun?.status === 'failed',
+                                  'bg-yellow-100 text-yellow-800': selectedRun?.status === 'running'
+                              }"
+                              x-text="selectedRun?.status"></span>
+                        <button @click="selectedRun = null" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Summary Stats -->
+                <div class="grid grid-cols-5 gap-4 mb-6">
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-gray-800" x-text="selectedRun?.total_items_found || 0"></div>
+                        <div class="text-xs text-gray-500">Found</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-green-600" x-text="selectedRun?.total_items_scraped || 0"></div>
+                        <div class="text-xs text-gray-500">Scraped</div>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-orange-600" x-text="selectedRun?.total_items_rejected || 0"></div>
+                        <div class="text-xs text-gray-500">Rejected</div>
+                    </div>
+                    <div class="bg-blue-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-blue-600" x-text="selectedRun?.total_enriched || 0"></div>
+                        <div class="text-xs text-gray-500">Enriched</div>
+                    </div>
+                    <div class="bg-indigo-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-indigo-600" x-text="selectedRun?.total_saved_new || 0"></div>
+                        <div class="text-xs text-gray-500">New Saved</div>
+                    </div>
+                </div>
+
+                <!-- Error Message -->
+                <div x-show="selectedRun?.error_message" class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <h3 class="text-sm font-medium text-red-800 mb-1">Error</h3>
+                    <p class="text-sm text-red-600" x-text="selectedRun?.error_message"></p>
+                </div>
+
+                <!-- Tabs -->
+                <div class="border-b border-gray-200 mb-4">
+                    <nav class="flex space-x-8">
+                        <button @click="detailTab = 'sources'"
+                                :class="detailTab === 'sources' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                                class="py-2 px-1 border-b-2 font-medium text-sm">
+                            Sources (<span x-text="selectedRun?.source_stats?.length || 0"></span>)
+                        </button>
+                        <button @click="detailTab = 'enrichments'"
+                                :class="detailTab === 'enrichments' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                                class="py-2 px-1 border-b-2 font-medium text-sm">
+                            Enrichments (<span x-text="selectedRun?.enrichment_log?.length || 0"></span>)
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Sources Tab -->
+                <div x-show="detailTab === 'sources'">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Found</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Scraped</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rejected</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rejection Reasons</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                <template x-for="source in selectedRun?.source_stats || []" :key="source.id">
+                                    <tr>
+                                        <td class="px-3 py-2 font-medium text-gray-900" x-text="source.source_name"></td>
+                                        <td class="px-3 py-2 text-gray-500" x-text="source.source_type"></td>
+                                        <td class="px-3 py-2 text-gray-700" x-text="source.items_found"></td>
+                                        <td class="px-3 py-2 text-green-600 font-medium" x-text="source.items_scraped"></td>
+                                        <td class="px-3 py-2 text-orange-600" x-text="source.items_rejected"></td>
+                                        <td class="px-3 py-2 text-gray-500 text-xs">
+                                            <template x-if="source.rejection_reasons">
+                                                <div>
+                                                    <template x-for="(count, reason) in source.rejection_reasons" :key="reason">
+                                                        <span class="inline-block bg-gray-100 px-2 py-0.5 rounded mr-1 mb-1">
+                                                            <span x-text="reason"></span>: <span x-text="count"></span>
+                                                        </span>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <span x-show="source.error_message" class="text-red-500 text-xs" x-text="source.error_message"></span>
+                                            <span x-show="!source.error_message" class="text-green-500">-</span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Enrichments Tab -->
+                <div x-show="detailTab === 'enrichments'">
+                    <div x-show="!selectedRun?.enrichment_log?.length" class="text-center py-8 text-gray-500">
+                        No enrichments in this run.
+                    </div>
+                    <div x-show="selectedRun?.enrichment_log?.length" class="space-y-3 max-h-96 overflow-y-auto">
+                        <template x-for="log in selectedRun?.enrichment_log || []" :key="log.id">
+                            <div class="border border-gray-200 rounded-lg p-3">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div class="font-medium text-gray-900 text-sm truncate max-w-md" x-text="log.title"></div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="px-2 py-0.5 text-xs rounded"
+                                              :class="log.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
+                                              x-text="log.success ? 'Success' : 'Failed'"></span>
+                                        <span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded" x-text="log.phase"></span>
+                                    </div>
+                                </div>
+                                <div x-show="log.error_message" class="text-sm text-red-600 mb-2" x-text="log.error_message"></div>
+                                <div class="grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                        <div class="font-medium text-gray-500 mb-1">Before</div>
+                                        <div class="bg-gray-50 p-2 rounded font-mono">
+                                            <template x-for="(value, key) in log.fields_before" :key="key">
+                                                <div x-show="value">
+                                                    <span class="text-gray-500" x-text="key + ': '"></span>
+                                                    <span x-text="Array.isArray(value) ? value.join(', ') : value"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="font-medium text-gray-500 mb-1">After</div>
+                                        <div class="bg-green-50 p-2 rounded font-mono">
+                                            <template x-for="(value, key) in log.fields_after" :key="key">
+                                                <div x-show="value">
+                                                    <span class="text-gray-500" x-text="key + ': '"></span>
+                                                    <span :class="log.fields_before[key] !== value ? 'text-green-600 font-medium' : ''"
+                                                          x-text="Array.isArray(value) ? value.join(', ') : value"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function runsPage() {
+    return {
+        runs: [],
+        loading: false,
+        page: 1,
+        pages: 1,
+        total: 0,
+        selectedRun: null,
+        detailTab: 'sources',
+
+        async init() {
+            await this.loadRuns();
+        },
+
+        async loadRuns() {
+            this.loading = true;
+            try {
+                const response = await api(`/api/runs?page=${this.page}&limit=20`);
+                this.runs = response.runs || [];
+                this.total = response.total;
+                this.pages = response.pages;
+            } catch (error) {
+                showToast('Failed to load runs', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async showRunDetail(runId) {
+            try {
+                this.selectedRun = await api(`/api/runs/${runId}`);
+                this.detailTab = 'sources';
+            } catch (error) {
+                showToast('Failed to load run details', 'error');
+            }
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toLocaleString();
+        },
+
+        prevPage() {
+            if (this.page > 1) {
+                this.page--;
+                this.loadRuns();
+            }
+        },
+
+        nextPage() {
+            if (this.page < this.pages) {
+                this.page++;
+                this.loadRuns();
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -8,6 +8,7 @@ from typing import Optional
 from .config import Config, load_config, setup_logging, SourceConfig
 from .storage.database import Database
 from .storage.models import NewsItem
+from .storage.run_tracker import RunTracker
 from .scrapers.base import ScraperResult
 from .scrapers.rss_scraper import RssScraper
 from .scrapers.web_scraper import WebScraper
@@ -216,95 +217,201 @@ class NewsAggregator:
         skip_enrich: bool = False,
         skip_email: bool = False,
         email_dry_run: bool = False,
+        tracker: Optional[RunTracker] = None,
     ) -> dict:
         """
         Run the full pipeline.
 
+        Args:
+            tracker: Optional RunTracker for detailed statistics. If not provided, one will be created.
+
         Returns:
             dict with run statistics
         """
-        stats = {
-            "started_at": datetime.now().isoformat(),
-            "sources_processed": 0,
-            "items_scraped": 0,
-            "items_after_dedup": 0,
-            "items_classified": 0,
-            "items_enriched": 0,
-            "items_saved_new": 0,
-            "items_saved_updated": 0,
-            "email_sent": False,
-            "errors": [],
+        # Create tracker if not provided
+        if tracker is None:
+            tracker = RunTracker(self.db)
+
+        # Start the run with settings snapshot
+        settings_snapshot = {
+            "llm_provider": self.config.processing.llm_provider,
+            "llm_model": self.config.processing.llm_model,
+            "enrichment_provider": self.config.processing.enrichment_provider,
+            "enrichment_model": self.config.processing.enrichment_model,
+            "dedup_threshold": self.config.processing.dedup_similarity_threshold,
+            "enabled_sources": [s.name for s in self.config.enabled_sources],
         }
+        tracker.start_run(settings_snapshot)
+
+        error_message = None
 
         try:
             # Step 1: Scrape
             if not skip_scrape:
                 logger.info("=== STEP 1: SCRAPING ===")
-                items = await self.scrape_all_sources()
-                stats["sources_processed"] = len(self.config.enabled_sources)
-                stats["items_scraped"] = len(items)
+                items = await self._scrape_all_sources_tracked(tracker)
             else:
                 logger.info("Skipping scrape step")
                 items = []
 
             if not items:
                 logger.info("No items to process")
-                stats["completed_at"] = datetime.now().isoformat()
-                return stats
+                tracker.end_run('completed')
+                return tracker.get_summary()
 
             # Step 2: Deduplicate
             logger.info("=== STEP 2: DEDUPLICATION ===")
+            original_count = len(items)
             items = self.deduplicate(items)
-            stats["items_after_dedup"] = len(items)
+            duplicates_removed = original_count - len(items)
+            tracker.total_duplicates = duplicates_removed
+            logger.info(f"Deduplication: {original_count} -> {len(items)} ({duplicates_removed} duplicates)")
 
             if not items:
                 logger.info("All items were duplicates")
-                stats["completed_at"] = datetime.now().isoformat()
-                return stats
+                tracker.end_run('completed')
+                return tracker.get_summary()
 
             # Step 3: Classify
             if not skip_classify:
                 logger.info("=== STEP 3: CLASSIFICATION ===")
                 items = self.classify(items)
-                stats["items_classified"] = len(items)
+                tracker.record_classified(len(items))
             else:
                 logger.info("Skipping classification step")
 
             # Step 4: Enrich
             if not skip_enrich:
                 logger.info("=== STEP 4: ENRICHMENT ===")
-                items = await self.enrich(items)
-                stats["items_enriched"] = len([i for i in items if i.enrichment_source != "none"])
+                items = await self._enrich_tracked(items, tracker)
             else:
                 logger.info("Skipping enrichment step")
 
             # Step 5: Save
             logger.info("=== STEP 5: SAVING ===")
             new_count, updated_count = self.save_items(items)
-            stats["items_saved_new"] = new_count
-            stats["items_saved_updated"] = updated_count
+            tracker.record_saved(new_count, updated_count)
 
             # Step 6: Email digest
             if not skip_email:
                 logger.info("=== STEP 6: EMAIL DIGEST ===")
-                stats["email_sent"] = await self.send_digest(
+                email_sent = await self.send_digest(
                     items=items,
                     dry_run=email_dry_run
                 )
+                tracker.record_email_sent(email_sent)
             else:
                 logger.info("Skipping email step")
 
         except Exception as e:
             logger.error(f"Pipeline error: {e}")
-            stats["errors"].append(str(e))
+            error_message = str(e)
 
-        stats["completed_at"] = datetime.now().isoformat()
+        # End run
+        status = 'failed' if error_message else 'completed'
+        tracker.end_run(status, error_message)
 
-        # Log summary
-        logger.info("=== PIPELINE COMPLETE ===")
-        logger.info(f"Items: {stats['items_scraped']} scraped -> {stats['items_after_dedup']} unique -> {stats['items_saved_new']} new")
+        return tracker.get_summary()
 
-        return stats
+    async def _scrape_all_sources_tracked(self, tracker: RunTracker) -> list[NewsItem]:
+        """Scrape all sources with detailed tracking."""
+        all_items: list[NewsItem] = []
+
+        for source in self.config.enabled_sources:
+            tracker.start_source(source.name, source.url, source.type)
+
+            try:
+                result = await self.scrape_source(source)
+
+                # Record stats
+                tracker.record_item_found(len(result.items) + result.skipped_count)
+                tracker.record_item_scraped(len(result.items))
+
+                # Record rejections by reason
+                if result.skipped_count > 0:
+                    tracker.record_item_rejected("keyword_filter", result.skipped_count)
+
+                if result.errors:
+                    tracker.record_source_error("; ".join(result.errors))
+
+                all_items.extend(result.items)
+
+                # Small delay between sources
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                tracker.record_source_error(str(e))
+                logger.error(f"Error processing source {source.name}: {e}")
+
+            tracker.end_source()
+
+        return all_items
+
+    async def _enrich_tracked(self, items: list[NewsItem], tracker: RunTracker) -> list[NewsItem]:
+        """Enrich items with tracking."""
+        if not self.enricher:
+            logger.warning("No enricher configured")
+            return items
+
+        enriched_items = []
+        for item in items:
+            if not self.enricher.should_enrich(item):
+                enriched_items.append(item)
+                continue
+
+            # Capture before state
+            fields_before = {
+                "news_type": item.news_type,
+                "news_type_confidence": item.news_type_confidence,
+                "region": item.region,
+                "region_confidence": item.region_confidence,
+                "related_people": item.related_people,
+                "related_people_confidence": item.related_people_confidence,
+                "company_name": item.company_name,
+                "funding_amount": item.funding_amount,
+            }
+
+            try:
+                enriched_item = await self.enricher.enrich_item(item)
+
+                # Capture after state
+                fields_after = {
+                    "news_type": enriched_item.news_type,
+                    "news_type_confidence": enriched_item.news_type_confidence,
+                    "region": enriched_item.region,
+                    "region_confidence": enriched_item.region_confidence,
+                    "related_people": enriched_item.related_people,
+                    "related_people_confidence": enriched_item.related_people_confidence,
+                    "company_name": enriched_item.company_name,
+                    "funding_amount": enriched_item.funding_amount,
+                }
+
+                # Record enrichment
+                tracker.record_enrichment(
+                    url_hash=item.url_hash,
+                    title=item.title,
+                    phase=enriched_item.enrichment_source,
+                    fields_before=fields_before,
+                    fields_after=fields_after,
+                    success=True,
+                )
+
+                enriched_items.append(enriched_item)
+
+            except Exception as e:
+                logger.error(f"Enrichment error for {item.title[:30]}...: {e}")
+                tracker.record_enrichment(
+                    url_hash=item.url_hash,
+                    title=item.title,
+                    phase="error",
+                    fields_before=fields_before,
+                    fields_after=fields_before,
+                    success=False,
+                    error_message=str(e),
+                )
+                enriched_items.append(item)
+
+        return enriched_items
 
     def get_stats(self) -> dict:
         """Get current database statistics."""
